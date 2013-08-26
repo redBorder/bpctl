@@ -1214,7 +1214,7 @@ void get_bypass_caps_cmd(int file_desc,int if_index, int bus, int slot, int func
 
     for (i=0;bp_cap_array[i].flag;i++) {
         if (bpctl_cmd.status & bp_cap_array[i].flag)
-            printf(bp_cap_array[i].desc);
+            printf("%s", bp_cap_array[i].desc);
     }
 }
 

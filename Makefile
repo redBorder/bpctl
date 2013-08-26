@@ -28,7 +28,7 @@
 ###########################################################################
 # Driver files
 
-MOD_VER=5.0.40.29
+MOD_VER=5.0.40.29-rb
 INSTALL_MOD_PATH=/opt/rb
 
 # core driver files
