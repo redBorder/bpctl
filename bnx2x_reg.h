@@ -1,23 +1,3 @@
-/* bnx2x_reg.h: Broadcom Everest network driver.
- *
- * Copyright (c) 2007-2008 Broadcom Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation.
- *
- * The registers description starts with the regsister Access type followed
- * by size in bits. For example [RW 32]. The access types are:
- * R  - Read only
- * RC - Clear on read
- * RW - Read/Write
- * ST - Statistics register (clear on read)
- * W  - Write only
- * WB - Wide bus register - the size is over 32 bits and it should be
- *      read/write in consecutive 32 bits accesses
- * WR - Write Clear (write 1 to clear the bit)
- *
- */
 
 
 /* [R 19] Interrupt register #0 read */

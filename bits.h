@@ -1,16 +1,3 @@
-/******************************************************************************/
-/*                                                                            */
-/* Broadcom BCM5700 Linux Network Driver, Copyright (c) 2000 - 2004 Broadcom  */
-/* Corporation.                                                               */
-/* All rights reserved.                                                       */
-/*                                                                            */
-/* This program is free software; you can redistribute it and/or modify       */
-/* it under the terms of the GNU General Public License as published by       */
-/* the Free Software Foundation, located in the file LICENSE.                 */
-/*                                                                            */
-/* History:                                                                   */
-/*    02/25/00 Hav Khauv        Initial version.                              */
-/******************************************************************************/
 
 #ifndef BITS_H
 #define BITS_H

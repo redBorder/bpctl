@@ -1,15 +1,35 @@
-/******************************************************************************/
-/*                                                                            */
-/* Bypass Control utility, Copyright (c) 2005 Silicom                         */
-/*                                                                            */
-/* This program is free software; you can redistribute it and/or modify       */
-/* it under the terms of the GNU General Public License as published by       */
-/* the Free Software Foundation, located in the file LICENSE.                 */
-/*                                                                            */
-/*                                                                            */
-/* bp_mod.h                                                                   */
-/*                                                                            */
-/******************************************************************************/
+/**************************************************************************
+
+Copyright (c) 2005-2013, Silicom
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+ 3. Neither the name of the Silicom nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+***************************************************************************/
 
 #ifndef BP_MOD_H
 #define BP_MOD_H
@@ -165,11 +185,21 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define SILICOM_PE210G2DBi9LR_SSID	    0x0189	
 #define SILICOM_PE210G2DBi9LRRB_SSID	0x0189	
 #define SILICOM_PE310G4DBi940SR_SSID	0x018C
+
+#define SILICOM_PE310G4DBi9T_SSID       0x18e
+
+
+
 	
 
 #define SILICOM_PE310G4BPi9T_SSID       0x130
 #define SILICOM_PE310G4BPi9SR_SSID        0x132
 #define SILICOM_PE310G4BPi9LR_SSID        0x133
+
+
+#define SILICOM_M6E310G4BPi9SR_SSID    	0x0492
+#define SILICOM_M6E310G4BPi9LR_SSID    	0x0493
+
 
 
 
@@ -221,6 +251,7 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define SILICOM_PEG4BPFI6FCZX_SSID    0x032B
 
 #define SILICOM_PEG6BPI6_SSID     0x0340
+#define SILICOM_PE2G6BPI6_SSID     0x0341
 
 #define SILICOM_PEG2BPI6SC6_SSID     0x0360
 
@@ -251,7 +282,18 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define SILICOM_PE2G4BPFi35LX_SSID    0x03D2
 #define SILICOM_PE2G4BPFi35ZX_SSID    0x03D3
 
+#define SILICOM_M1E2G4BPi35_SSID    0x04D0
+#define SILICOM_M1E2G4BPFi35_SSID    0x04D1
+#define SILICOM_M1E2G4BPFi35LX_SSID    0x04D2
+#define SILICOM_M1E2G4BPFi35ZX_SSID    0x04D3
+
+#define SILICOM_M1E2G4BPi35JP_SSID    0x1800
+#define SILICOM_M1E2G4BPi35JP1_SSID    0x1801
+
+
+
 #define SILICOM_PE2G2BPi35_SSID    0x03c0
+#define SILICOM_PAC1200BPi35_SSID    0x03cc
 #define SILICOM_PE2G2BPFi35_SSID    0x03C1
 #define SILICOM_PE2G2BPFi35LX_SSID    0x03C2
 #define SILICOM_PE2G2BPFi35ZX_SSID    0x03C3
@@ -290,6 +332,13 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define SILICOM_M1E2G4BPFi80ZX_SSID     0x0463
 
 #define SILICOM_M6E2G8BPi80_SSID        0x0470
+#define SILICOM_PE210G2BPi40_SSID       0x01a0
+#define SILICOM_M1E210G2BPI40T_SSID       0x0480
+
+#define PEG540_IF_SERIES(pid) \
+          ((pid==SILICOM_PE210G2BPi40_SSID) || \
+          (pid==SILICOM_M1E210G2BPI40T_SSID)) 
+          
 
 
 
@@ -424,7 +473,7 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define SILICOM_M1E10G2BPI9CX4_SSID  0x481
 #define SILICOM_M1E10G2BPI9SR_SSID   0x482
 #define SILICOM_M1E10G2BPI9LR_SSID   0x483
-#define SILICOM_M1E10G2BPI9T_SSID    0x480
+//#define SILICOM_M1E10G2BPI9T_SSID    0x480
 
 #define SILICOM_M2E10G2BPI9CX4_SSID  0x581
 #define SILICOM_M2E10G2BPI9SR_SSID   0x582
@@ -444,11 +493,11 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
            (pid==SILICOM_PE210G2DBi9LR_SSID))
 
 
-
 #define PEGF5_IF_SERIES(pid) \
 ((pid==SILICOM_PEG2BPFI5_SSID)|| \
           (pid==SILICOM_PEG2BPFI5LX_SSID)|| \
           (pid==SILICOM_PEG4BPFI6_SSID)|| \
+          (pid==SILICOM_PE2G6BPI6_SSID)|| \
           (pid==SILICOM_PEG4BPFI6LX_SSID)|| \
            (pid==SILICOM_PEG4BPFI6ZX_SSID)|| \
            (pid==SILICOM_PEG2BPFI6_SSID)|| \
@@ -481,9 +530,9 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define PEG5_IF_SERIES(pid) \
 ((pid==SILICOM_PEG4BPI6_SSID)|| \
 (pid==SILICOM_PEG2BPI6_SSID)|| \
+(pid==SILICOM_PEG2BPI6SC6_SSID)|| \
 (pid==SILICOM_PEG4BPI6FC_SSID)|| \
 (pid==SILICOM_PEG6BPI6_SSID)|| \
-(pid==SILICOM_PEG2BPI6SC6_SSID)|| \
 (pid==SILICOM_MEG2BPI6_SSID)|| \
 (pid==SILICOM_XEG2BPI6_SSID)|| \
 (pid==SILICOM_MEG4BPI6_SSID)|| \
@@ -493,7 +542,6 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 (pid==SILICOM_PEG6BPI_SSID)|| \
 (pid==SILICOM_PEG4BPIL_SSID)|| \
 (pid==SILICOM_PEG2BISC6_SSID)|| \
-(pid==SILICOM_PEG2DBI6_SSID)|| \
 (pid==SILICOM_PEG2BPI5_SSID))
  
 
@@ -503,8 +551,12 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 (pid==SILICOM_PE2G4BPi80L_SSID)|| \
 (pid==SILICOM_M6E2G8BPi80A_SSID)|| \
 (pid==SILICOM_PE2G2BPi35_SSID)|| \
+(pid==SILICOM_PAC1200BPi35_SSID)|| \
 (pid==SILICOM_PE2G4BPi35_SSID)|| \
 (pid==SILICOM_PE2G4BPi35L_SSID)|| \
+(pid==SILICOM_M1E2G4BPi35_SSID)|| \
+(pid==SILICOM_M1E2G4BPi35JP_SSID)|| \
+(pid==SILICOM_M1E2G4BPi35JP1_SSID)|| \
 (pid==SILICOM_PE2G6BPi35_SSID)|| \
 (pid==SILICOM_PE2G2BPi80_SSID)|| \
 (pid==SILICOM_PE2G4BPi80_SSID)|| \
@@ -518,6 +570,9 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 (pid==SILICOM_PE2G2BPFi35_SSID)|| \
 (pid==SILICOM_PE2G2BPFi35LX_SSID)|| \
 (pid==SILICOM_PE2G2BPFi35ZX_SSID)|| \
+(pid==SILICOM_M1E2G4BPFi35_SSID)|| \
+(pid==SILICOM_M1E2G4BPFi35LX_SSID)|| \
+(pid==SILICOM_M1E2G4BPFi35ZX_SSID)|| \
 (pid==SILICOM_PE2G4BPFi35_SSID)|| \
 (pid==SILICOM_PE2G4BPFi35LX_SSID)|| \
 (pid==SILICOM_PE2G4BPFi35ZX_SSID))
@@ -537,6 +592,9 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 (pid==SILICOM_PE2G2BPFi35_SSID)|| \
 (pid==SILICOM_PE2G2BPFi35LX_SSID)|| \
 (pid==SILICOM_PE2G2BPFi35ZX_SSID)|| \
+(pid==SILICOM_M1E2G4BPFi35_SSID)|| \
+(pid==SILICOM_M1E2G4BPFi35LX_SSID)|| \
+(pid==SILICOM_M1E2G4BPFi35ZX_SSID)|| \
 (pid==SILICOM_PE2G4BPFi35_SSID)|| \
 (pid==SILICOM_PE2G4BPFi35LX_SSID)|| \
 (pid==SILICOM_PE2G4BPFi35ZX_SSID))
@@ -547,7 +605,6 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 (pid==SILICOM_M1E10G2BPI9CX4_SSID)|| \
 (pid==SILICOM_M1E10G2BPI9SR_SSID)|| \
 (pid==SILICOM_M1E10G2BPI9LR_SSID)|| \
-(pid==SILICOM_M1E10G2BPI9T_SSID)|| \
 (pid==SILICOM_M2E10G2BPI9CX4_SSID)|| \
 (pid==SILICOM_M2E10G2BPI9SR_SSID)|| \
 (pid==SILICOM_M2E10G2BPI9LR_SSID)|| \
@@ -560,9 +617,11 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 (pid==SILICOM_PE210G2DBi9LR_SSID)|| \
 (pid==SILICOM_PE210G2DBi9LRRB_SSID)|| \
 (pid==SILICOM_PE310G4DBi940SR_SSID)|| \
-(pid==SILICOM_PEG2BISC6_SSID)|| \
+(pid==SILICOM_PE310G4DBi9T_SSID)|| \
 (pid==SILICOM_PE310G4BPi9T_SSID)|| \
 (pid==SILICOM_PE310G4BPi9SR_SSID)|| \
+(pid==SILICOM_M6E310G4BPi9SR_SSID)|| \
+(pid==SILICOM_M6E310G4BPi9LR_SSID)|| \
 (pid==SILICOM_PE310G4BPi9LR_SSID)|| \
 (pid==SILICOM_PE210G2BPI9T_SSID))
 
@@ -670,6 +729,9 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define BPCTLI_MAX_PHY_MULTI_PAGE_REG 0xF 
 #define BPCTLI_GEN_POLL_TIMEOUT          640 
 
+/********************************************************/
+
+
 
 
 /********************************************************/
@@ -697,6 +759,10 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 #define BP10G_SDP3_DATA           0x008
 #define BP10G_SDP4_DATA           0x010
 #define BP10G_SDP5_DATA           0x020
+
+#define BP10G_SDP2_DIR            0x400
+#define BP10G_SDP2_DATA            0x4
+
 
 #define BP10G_EODSDP              0x28
 
@@ -728,6 +794,12 @@ static inline unsigned int jiffies_to_msecs(const unsigned long j)
 /*#define BP10G_MDIO_DATA_IN9        BP10G_I2C_DATA_IN*/
 
 #define BP10G_MDIO_DATA_IN9           BP10G_I2C_DATA_IN /*BP10G_I2C_CLK_IN*/
+
+#define BP540_MDIO_DATA           /*BP10G_SDP5_DATA*/ BP10G_SDP0_DATA
+#define BP540_MDIO_DIR            /*BP10G_SDP5_DIR*/  BP10G_SDP0_DIR
+#define BP540_MCLK_DATA       BP10G_SDP2_DATA
+#define BP540_MCLK_DIR       BP10G_SDP2_DIR
+
 
 
 #define BP10G_WRITE_REG(a, reg, value) \

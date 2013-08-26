@@ -1,14 +1,35 @@
-/******************************************************************************/
-/*                                                                            */
-/* Bypass Control utility, Copyright (c) 2005-20011 Silicom                   */
-/*                                                                            */
-/* This program is free software; you can redistribute it and/or modify       */
-/* it under the terms of the GNU General Public License as published by       */
-/* the Free Software Foundation, located in the file LICENSE.                 */
-/*  Copyright(c) 2007 - 2009 Intel Corporation. All rights reserved.          */
-/*                                                                            */
-/*                                                                            */
-/******************************************************************************/
+/**************************************************************************
+
+Copyright (c) 2005-2013, Silicom
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+ 3. Neither the name of the Silicom nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+***************************************************************************/
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17))
     #include <linux/config.h>
@@ -16,6 +37,8 @@
 #if defined(CONFIG_SMP) && ! defined(__SMP__)
     #define __SMP__
 #endif
+
+
 
 #include <linux/kernel.h> /* We're doing kernel work */
 #include <linux/module.h> /* Specifically, a module */
@@ -70,6 +93,7 @@ typedef enum {
     bp_copper = 0,
     bp_fiber,
     bp_cx4,
+    bp_none,
 } bp_media_type;
 
 struct pfs_unit_sd {
@@ -138,6 +162,7 @@ typedef struct _bpctl_dev {
     int   bp_fiber5;
     int   bp_10g9;
     int   bp_i80;
+    int   bp_540;
 #ifdef BP_SELF_TEST
     int (*hard_start_xmit_save) (struct sk_buff *skb,
                                  struct net_device *dev);
@@ -184,8 +209,10 @@ static int bp_device_event(struct notifier_block *unused,
                            unsigned long event, void *ptr)
 {
     struct net_device *dev = ptr;
+#ifdef BP_LINK_FAIL_NOTIFIER
     static bpctl_dev_t *pbpctl_dev=NULL, *pbpctl_dev_m=NULL;
     int dev_num=0, ret=0, ret_d=0, time_left=0;
+#endif
     //printk("BP_PROC_SUPPORT event =%d %s %d\n", event,dev->name, dev->ifindex );
     //return NOTIFY_DONE;
     if (!dev)
@@ -198,7 +225,7 @@ static int bp_device_event(struct notifier_block *unused,
             char cbuf[32];
             char *buf=NULL;
             char res[10];
-            int i=0, ifindex, idx_dev=0;
+            int i=0,j=0, ifindex, idx_dev=0;
             int  bus=0,slot=0,func=0;
             ifindex=dev->ifindex;
 
@@ -213,8 +240,6 @@ static int bp_device_event(struct notifier_block *unused,
                 return NOTIFY_DONE;
             if (!drvinfo.bus_info)
                 return NOTIFY_DONE;
-            if (!strcmp(drvinfo.bus_info,"N/A"))
-                return NOTIFY_DONE;
             memcpy(&cbuf,drvinfo.bus_info,32);
             buf=  &cbuf[0];
 
@@ -225,26 +250,41 @@ static int bp_device_event(struct notifier_block *unused,
                 break;
             } */
             //}
-            while (*buf++!=':');
-            for (i=0;i<10;i++,buf++) {
-                if (*buf==':')
+            for (j=0;j<32;j++)
+                if (buf[j]==':')
                     break;
-                res[i]=*buf; 
+            if (++j>=32) {
+                return NOTIFY_DONE;
+            }
+            for (i=0;i<10;i++,j++) {
+                if (j>=32)
+                    break;
+                if (buf[j]==':')
+                    break;
+                res[i]=buf[j]; 
 
             }
-            buf++;
+            if (++j>=32) {
+                return NOTIFY_DONE;
+            }
+
             bus= str_to_hex(res);
             memset(res,0,10);
 
-            for (i=0;i<10;i++,buf++) {
-                if (*buf=='.')
+            for (i=0;i<10;i++,j++) {
+                if (j>=32)
                     break;
-                res[i]=*buf; 
+
+                if (buf[j]=='.')
+                    break;
+                res[i]=buf[j]; 
 
             }
-            buf++;
+            if (++j>=32) {
+                return NOTIFY_DONE;
+            }
             slot= str_to_hex(res);
-            func=  str_to_hex(buf);
+            func=  str_to_hex(&buf[j]);
             idx_dev=get_dev_idx_bsf(bus, slot, func) ;
 
 
@@ -346,7 +386,7 @@ static int bp_device_event(struct notifier_block *unused,
 
 }
 
-static struct notifier_block bp_notifier_block = {
+struct notifier_block bp_notifier_block = {
     .notifier_call = bp_device_event,
 };
 
@@ -390,6 +430,9 @@ static void write_pulse(bpctl_dev_t *pbpctl_dev,
 
     if (pbpctl_dev->bp_i80)
         ctrl= BPCTL_READ_REG(pbpctl_dev, CTRL_EXT);
+    if (pbpctl_dev->bp_540)
+        ctrl= BP10G_READ_REG(pbpctl_dev, ESDP);
+
     if (pbpctl_dev->bp_10g9) {
         if (!(pbpctl_dev_c=get_status_port_fn(pbpctl_dev)))
             return;
@@ -426,6 +469,14 @@ static void write_pulse(bpctl_dev_t *pbpctl_dev,
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, (ctrl | 
                                                           BPCTLI_CTRL_EXT_MCLK_DIR80|
                                                           BPCTLI_CTRL_EXT_MCLK_DATA80));
+
+
+            } else if (pbpctl_dev->bp_540) {
+                BP10G_WRITE_REG(pbpctl_dev, ESDP, (ctrl | 
+                                                   BP540_MDIO_DIR|
+                                                   BP540_MDIO_DATA| BP540_MCLK_DIR|BP540_MCLK_DATA));
+
+
 
 
             } else if (pbpctl_dev->bp_10gb) {
@@ -468,6 +519,9 @@ static void write_pulse(bpctl_dev_t *pbpctl_dev,
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                            BPCTLI_CTRL_EXT_MCLK_DIR80)&~(BPCTLI_CTRL_EXT_MCLK_DATA80)));
 
+            } else if (pbpctl_dev->bp_540) {
+                BP10G_WRITE_REG(pbpctl_dev, ESDP, (ctrl | BP540_MDIO_DIR|BP540_MDIO_DATA|BP540_MCLK_DIR)&~(BP540_MCLK_DATA));
+
             } else if (pbpctl_dev->bp_10gb) {
 
                 BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext | BP10GB_MDIO_SET|
@@ -506,6 +560,10 @@ static void write_pulse(bpctl_dev_t *pbpctl_dev,
                                                           BPCTLI_CTRL_EXT_MCLK_DIR80|
                                                           BPCTLI_CTRL_EXT_MCLK_DATA80));
 
+            } else if (pbpctl_dev->bp_540) {
+                BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl |BP540_MCLK_DIR| BP540_MCLK_DATA|BP540_MDIO_DIR)&~(BP540_MDIO_DATA)));
+
+
             } else if (pbpctl_dev->bp_10gb) {
                 BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext | BP10GB_MDIO_CLR|
                                                              BP10GB_MCLK_SET)&~(BP10GB_MCLK_DIR|BP10GB_MDIO_DIR|BP10GB_MDIO_SET|BP10GB_MCLK_CLR));
@@ -541,6 +599,9 @@ static void write_pulse(bpctl_dev_t *pbpctl_dev,
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                            BPCTLI_CTRL_EXT_MCLK_DIR80)&~(BPCTLI_CTRL_EXT_MCLK_DATA80)));
 
+            } else if (pbpctl_dev->bp_540) {
+                BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | BP540_MCLK_DIR|
+                                                    BP540_MDIO_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
             } else if (pbpctl_dev->bp_10gb) {
 
                 BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext | BP10GB_MDIO_CLR|
@@ -571,12 +632,13 @@ static int read_pulse(bpctl_dev_t *pbpctl_dev, unsigned int ctrl_ext ,unsigned c
 
     if (pbpctl_dev->bp_i80)
         ctrl= BPCTL_READ_REG(pbpctl_dev, CTRL_EXT);
+    if (pbpctl_dev->bp_540)
+        ctrl= BP10G_READ_REG(pbpctl_dev, ESDP);
     if (pbpctl_dev->bp_10g9) {
         if (!(pbpctl_dev_c=get_status_port_fn(pbpctl_dev)))
             return -1;
         ctrl= BP10G_READ_REG(pbpctl_dev_c, ESDP);
     }
-
 
 
     //ctrl_ext=BP10G_READ_REG(pbpctl_dev,EODSDP);    
@@ -596,6 +658,11 @@ static int read_pulse(bpctl_dev_t *pbpctl_dev, unsigned int ctrl_ext ,unsigned c
             BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL, (ctrl_ext &~BPCTLI_CTRL_EXT_MDIO_DIR80 ));
             BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                        BPCTLI_CTRL_EXT_MCLK_DIR80)&~( BPCTLI_CTRL_EXT_MCLK_DATA80)));
+
+
+
+        } else if (pbpctl_dev->bp_540) {
+            BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl|BP540_MCLK_DIR) &~(BP540_MDIO_DIR|BP540_MCLK_DATA) ));
 
 
 
@@ -641,6 +708,12 @@ static int read_pulse(bpctl_dev_t *pbpctl_dev, unsigned int ctrl_ext ,unsigned c
 
 
 
+        } else if (pbpctl_dev->bp_540) {
+            BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl|BP540_MCLK_DIR|BP540_MCLK_DATA)&~(BP540_MDIO_DIR)));
+
+
+
+
         } else if (pbpctl_dev->bp_10gb) {
             BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext | BP10GB_MDIO_DIR|
                                                          BP10GB_MCLK_SET)&~(BP10GB_MCLK_DIR|BP10GB_MDIO_CLR| BP10GB_MDIO_SET|BP10GB_MCLK_CLR));
@@ -662,6 +735,8 @@ static int read_pulse(bpctl_dev_t *pbpctl_dev, unsigned int ctrl_ext ,unsigned c
 
         } else if ((pbpctl_dev->bp_fiber5)||(pbpctl_dev->bp_i80)) {
             ctrl_ext = BPCTL_READ_REG(pbpctl_dev, CTRL);
+        } else if (pbpctl_dev->bp_540) {
+            ctrl_ext = BP10G_READ_REG(pbpctl_dev, ESDP);
         } else if (pbpctl_dev->bp_10gb)
             ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
 
@@ -682,6 +757,9 @@ static int read_pulse(bpctl_dev_t *pbpctl_dev, unsigned int ctrl_ext ,unsigned c
                 ctrl_val |= 1<<i;
         } else if (pbpctl_dev->bp_i80) {
             if (ctrl_ext & BPCTLI_CTRL_EXT_MDIO_DATA80)
+                ctrl_val |= 1<<i;
+        } else if (pbpctl_dev->bp_540) {
+            if (ctrl_ext & BP540_MDIO_DATA)
                 ctrl_val |= 1<<i;
         } else if (pbpctl_dev->bp_10gb) {
             if (ctrl_ext & BP10GB_MDIO_DATA)
@@ -743,6 +821,11 @@ static void write_reg(bpctl_dev_t *pbpctl_dev, unsigned char value, unsigned cha
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                    BPCTLI_CTRL_EXT_MCLK_DIR80 )&~BPCTLI_CTRL_EXT_MCLK_DATA80));
 
+    } else if (pbpctl_dev->bp_540) {
+        ctrl=ctrl_ext = BP10G_READ_REG(pbpctl_dev, ESDP);
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | 
+                                            BP540_MDIO_DIR| BP540_MCLK_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
+
     } else if (pbpctl_dev->bp_10gb) {
         ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
 
@@ -790,6 +873,9 @@ static void write_reg(bpctl_dev_t *pbpctl_dev, unsigned char value, unsigned cha
                                                BPCTLI_CTRL_EXT_MDIO_DIR80 )&~BPCTLI_CTRL_EXT_MDIO_DATA80));
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                    BPCTLI_CTRL_EXT_MCLK_DIR80 )&~BPCTLI_CTRL_EXT_MCLK_DATA80));
+    } else if (pbpctl_dev->bp_540) {
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | 
+                                            BP540_MDIO_DIR| BP540_MCLK_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
     } else if (pbpctl_dev->bp_10gb) {
         BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext |  BP10GB_MDIO_CLR|
                                                      BP10GB_MCLK_CLR)&~(BP10GB_MCLK_DIR| BP10GB_MDIO_DIR| BP10GB_MDIO_SET|BP10GB_MCLK_SET));
@@ -871,6 +957,12 @@ static int read_reg(bpctl_dev_t *pbpctl_dev, unsigned char addr){
                                                BPCTLI_CTRL_EXT_MDIO_DIR80)&~BPCTLI_CTRL_EXT_MDIO_DATA80));
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                    BPCTLI_CTRL_EXT_MCLK_DIR80 )&~BPCTLI_CTRL_EXT_MCLK_DATA80));
+    } else if (pbpctl_dev->bp_540) {
+        ctrl_ext = BP10G_READ_REG(pbpctl_dev, ESDP);
+        ctrl = BP10G_READ_REG(pbpctl_dev, ESDP); 
+
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | BP540_MCLK_DIR|
+                                            BP540_MDIO_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
     } else if (pbpctl_dev->bp_10gb) {
         ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
 
@@ -952,6 +1044,9 @@ static int read_reg(bpctl_dev_t *pbpctl_dev, unsigned char addr){
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, (ctrl | 
                                                   BPCTLI_CTRL_EXT_MCLK_DIR80|BPCTLI_CTRL_EXT_MCLK_DATA80));
 
+    } else if (pbpctl_dev->bp_540) {
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, (((ctrl|BP540_MDIO_DIR|BP540_MCLK_DIR|BP540_MCLK_DATA)&~BP540_MDIO_DATA )));
+
     } else if (pbpctl_dev->bp_10gb) {
 
         BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext |  BP10GB_MDIO_DIR|
@@ -990,6 +1085,11 @@ static int read_reg(bpctl_dev_t *pbpctl_dev, unsigned char addr){
                                                BPCTLI_CTRL_EXT_MDIO_DIR80)&~BPCTLI_CTRL_EXT_MDIO_DATA80));
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                    BPCTLI_CTRL_EXT_MCLK_DIR80 )&~BPCTLI_CTRL_EXT_MCLK_DATA80));
+
+    } else if (pbpctl_dev->bp_540) {
+        ctrl= BP10G_READ_REG(pbpctl_dev, ESDP);
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | BP540_MCLK_DIR|
+                                            BP540_MDIO_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
 
     } else if (pbpctl_dev->bp_10gb) {
         ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
@@ -1061,6 +1161,10 @@ static int wdt_pulse(bpctl_dev_t *pbpctl_dev){
                                                BPCTLI_CTRL_EXT_MDIO_DIR80)&~BPCTLI_CTRL_EXT_MDIO_DATA80));
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                    BPCTLI_CTRL_EXT_MCLK_DIR80 )&~BPCTLI_CTRL_EXT_MCLK_DATA80));
+    } else if (pbpctl_dev->bp_540) {
+        ctrl_ext =ctrl = BP10G_READ_REG(pbpctl_dev, ESDP);
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | BP540_MCLK_DIR|
+                                            BP540_MDIO_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
     } else if (pbpctl_dev->bp_10gb) {
         ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
         BP10GB_WRITE_REG(pbpctl_dev, MISC_REG_SPIO, (ctrl_ext |  BP10GB_MDIO_CLR|
@@ -1098,6 +1202,10 @@ static int wdt_pulse(bpctl_dev_t *pbpctl_dev){
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, (ctrl | 
                                                   BPCTLI_CTRL_EXT_MCLK_DIR80|
                                                   BPCTLI_CTRL_EXT_MCLK_DATA80));
+
+    } else if (pbpctl_dev->bp_540) {
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl | 
+                                            BP540_MDIO_DIR |BP540_MCLK_DIR|BP540_MCLK_DATA)&~BP540_MDIO_DATA));
 
     } else if (pbpctl_dev->bp_10gb) {
         ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
@@ -1137,6 +1245,10 @@ static int wdt_pulse(bpctl_dev_t *pbpctl_dev){
                                                BPCTLI_CTRL_EXT_MDIO_DIR80)&~BPCTLI_CTRL_EXT_MDIO_DATA80));
         BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl | 
                                                    BPCTLI_CTRL_EXT_MCLK_DIR80)&~BPCTLI_CTRL_EXT_MCLK_DATA80));
+
+    } else if (pbpctl_dev->bp_540) {
+        BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl |BP540_MCLK_DIR| 
+                                            BP540_MDIO_DIR)&~(BP540_MDIO_DATA|BP540_MCLK_DATA)));
 
     } else if (pbpctl_dev->bp_10gb) {
         ctrl_ext = BP10GB_READ_REG(pbpctl_dev, MISC_REG_SPIO);
@@ -2068,15 +2180,38 @@ static int set_tx (bpctl_dev_t *pbpctl_dev, int tx_state){
         pbpctl_dev_m=get_master_port_fn(pbpctl_dev);
     if (pbpctl_dev_m==NULL)
         return BP_NOT_CAP;
+
     if (pbpctl_dev_m->bp_caps_ex&DISC_PORT_CAP_EX) {
         ctrl = BPCTL_READ_REG(pbpctl_dev, CTRL);
-        if (!tx_state)
-            BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL,(ctrl|BPCTLI_CTRL_SDP1_DIR|BPCTLI_CTRL_SWDPIN1));
-        else
-            BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL, ((ctrl|BPCTLI_CTRL_SDP1_DIR)&~BPCTLI_CTRL_SWDPIN1));
-        return ret;
+        if (!tx_state) {
+            if (pbpctl_dev->bp_540) {
+                ctrl=BP10G_READ_REG(pbpctl_dev,ESDP);
+                BP10G_WRITE_REG(pbpctl_dev, ESDP,(ctrl|BP10G_SDP1_DIR|BP10G_SDP1_DATA));
+
+            } else if (pbpctl_dev->bp_fiber5) {
+                ctrl = BPCTL_READ_REG(pbpctl_dev, CTRL_EXT);
+
+                BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT,(ctrl|BPCTLI_CTRL_EXT_SDP6_DIR|BPCTLI_CTRL_EXT_SDP6_DATA));
 
 
+            } else {
+                BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL,(ctrl|BPCTLI_CTRL_SDP1_DIR|BPCTLI_CTRL_SWDPIN1));
+            }
+        } else {
+            if (pbpctl_dev->bp_540) {
+                ctrl=BP10G_READ_REG(pbpctl_dev,ESDP);
+                BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl|BP10G_SDP1_DIR)&~BP10G_SDP1_DATA));
+            } else if (pbpctl_dev->bp_fiber5) {
+                ctrl= BPCTL_READ_REG(pbpctl_dev, CTRL_EXT);
+                BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL_EXT, ((ctrl|BPCTLI_CTRL_EXT_SDP6_DIR)&~BPCTLI_CTRL_EXT_SDP6_DATA));
+
+
+            } else {
+                BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL, ((ctrl|BPCTLI_CTRL_SDP1_DIR)&~BPCTLI_CTRL_SWDPIN1));
+            }
+            return ret;
+
+        }
     } else if (pbpctl_dev->bp_caps&TX_CTL_CAP) {
         if (PEG5_IF_SERIES(pbpctl_dev->subdevice)) {
             if (tx_state) {
@@ -2086,7 +2221,9 @@ static int set_tx (bpctl_dev_t *pbpctl_dev, int tx_state){
                         ret=bp75_write_phy_reg(pbpctl_dev, BPCTLI_PHY_CONTROL, mii_reg&~BPCTLI_MII_CR_POWER_DOWN);
                     }
                 }
-            } else {
+            }
+
+            else {
                 uint16_t mii_reg;
                 if (!(ret=bp75_read_phy_reg(pbpctl_dev, BPCTLI_PHY_CONTROL, &mii_reg))) {
 
@@ -2127,7 +2264,12 @@ static int set_tx (bpctl_dev_t *pbpctl_dev, int tx_state){
             } else if (pbpctl_dev->bp_i80) {
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL,(ctrl|BPCTLI_CTRL_SDP1_DIR|BPCTLI_CTRL_SWDPIN1));
 
+            } else if (pbpctl_dev->bp_540) {
+                ctrl=BP10G_READ_REG(pbpctl_dev,ESDP);
+                BP10G_WRITE_REG(pbpctl_dev, ESDP,(ctrl|BP10G_SDP1_DIR|BP10G_SDP1_DATA));
+
             }
+
 
             else if (!pbpctl_dev->bp_10g)
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL,(ctrl|BPCTLI_CTRL_SWDPIO0|BPCTLI_CTRL_SWDPIN0));
@@ -2156,7 +2298,11 @@ static int set_tx (bpctl_dev_t *pbpctl_dev, int tx_state){
 
             } else if (pbpctl_dev->bp_i80) {
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL, ((ctrl|BPCTLI_CTRL_SDP1_DIR)&~BPCTLI_CTRL_SWDPIN1));
+            } else if (pbpctl_dev->bp_540) {
+                ctrl=BP10G_READ_REG(pbpctl_dev,ESDP);
+                BP10G_WRITE_REG(pbpctl_dev, ESDP, ((ctrl|BP10G_SDP1_DIR)&~BP10G_SDP1_DATA));
             }
+
 
             else if (!pbpctl_dev->bp_10g) {
                 BPCTL_BP_WRITE_REG(pbpctl_dev, CTRL, ((ctrl|BPCTLI_CTRL_SWDPIO0)&~BPCTLI_CTRL_SWDPIN0));
@@ -2749,6 +2895,12 @@ static int tx_status (bpctl_dev_t *pbpctl_dev){
         ctrl = BPCTL_READ_REG(pbpctl_dev, CTRL);
         if (pbpctl_dev->bp_i80)
             return((ctrl&BPCTLI_CTRL_SWDPIN1)!=0?0:1);
+        if (pbpctl_dev->bp_540) {
+            ctrl = BP10G_READ_REG(pbpctl_dev, ESDP);
+
+            return((ctrl&BP10G_SDP1_DATA)!=0?0:1);
+        }
+
 
 
     }
@@ -2788,6 +2940,12 @@ static int tx_status (bpctl_dev_t *pbpctl_dev){
             ctrl = BPCTL_READ_REG(pbpctl_dev, CTRL);
             if (pbpctl_dev->bp_i80)
                 return((ctrl&BPCTLI_CTRL_SWDPIN1)!=0?0:1);
+            if (pbpctl_dev->bp_540) {
+                ctrl = BP10G_READ_REG(pbpctl_dev, ESDP);
+
+                return((ctrl&BP10G_SDP1_DATA)!=0?0:1);
+            }
+
             return((ctrl&BPCTLI_CTRL_SWDPIN0)!=0?0:1);
         } else
             return((BP10G_READ_REG(pbpctl_dev,ESDP)&BP10G_SDP0_DATA)!=0?0:1);      
@@ -2914,7 +3072,16 @@ static int bypass_status(bpctl_dev_t *pbpctl_dev){
                 //return(((readl((void *)((pbpctl_dev)->mem_map) + 0x28))&0x4)!=0?0:1);
                 return((BP10G_READ_REG(pbpctl_dev_b,I2CCTL)&BP10G_I2C_CLK_IN)!=0?0:1);
 
-            } else if ((pbpctl_dev->bp_fiber5)||(pbpctl_dev->bp_i80)) {
+
+            } else if (pbpctl_dev->bp_540) {
+                ctrl_ext= BP10G_READ_REG(pbpctl_dev_b,ESDP);
+                BP10G_WRITE_REG(pbpctl_dev_b, ESDP, (ctrl_ext|BIT_11)&~BIT_3);
+                return(((BP10G_READ_REG(pbpctl_dev_b, ESDP)) & BP10G_SDP0_DATA)!=0?0:1);
+            }
+
+
+
+            else if ((pbpctl_dev->bp_fiber5)||(pbpctl_dev->bp_i80)) {
                 return(((BPCTL_READ_REG(pbpctl_dev_b, CTRL)) & BPCTLI_CTRL_SWDPIN0)!=0?0:1);
             } else if (pbpctl_dev->bp_10gb) {
                 ctrl_ext= BP10GB_READ_REG(pbpctl_dev, MISC_REG_GPIO);
@@ -3217,6 +3384,13 @@ int disc_off_status(bpctl_dev_t *pbpctl_dev){
             return(((BPCTL_READ_REG(pbpctl_dev_b, CTRL_EXT)) & BPCTLI_CTRL_EXT_SDP6_DATA)!=0?1:0);
 
         }
+        if (pbpctl_dev->bp_540) {
+            ctrl_ext= BP10G_READ_REG(pbpctl_dev_b,ESDP);
+            BP10G_WRITE_REG(pbpctl_dev_b, ESDP, (ctrl_ext|BIT_11)&~BIT_3);
+            //return(((readl((void *)((pbpctl_dev)->mem_map) + 0x28))&0x4)!=0?0:1);
+            return((BP10G_READ_REG(pbpctl_dev_b,ESDP)&BP10G_SDP2_DATA)!=0?1:0);
+
+        }
 
         //if (pbpctl_dev->device==SILICOM_PXG2TBI_SSID) {
         if (pbpctl_dev->media_type == bp_copper) {
@@ -3232,6 +3406,7 @@ int disc_off_status(bpctl_dev_t *pbpctl_dev){
 
 
         } else {
+
             if (pbpctl_dev->bp_10g9) {
                 ctrl_ext= BP10G_READ_REG(pbpctl_dev_b,I2CCTL);
                 BP10G_WRITE_REG(pbpctl_dev_b, I2CCTL, (ctrl_ext|BP10G_I2C_DATA_OUT));
@@ -3476,7 +3651,11 @@ void bypass_caps_init (bpctl_dev_t *pbpctl_dev){
             pbpctl_dev->media_type=  bp_cx4;
         else pbpctl_dev->media_type=  bp_fiber;
 
-    } else if (!pbpctl_dev->bp_10g) {
+    }
+
+    else if ( pbpctl_dev->bp_540)
+        pbpctl_dev->media_type=bp_none;
+    else if (!pbpctl_dev->bp_10g) {
 
         ctrl_ext = BPCTL_READ_REG(pbpctl_dev, CTRL_EXT);
         if ((ctrl_ext & BPCTLI_CTRL_EXT_LINK_MODE_MASK) ==0x0)
@@ -3506,6 +3685,8 @@ void bypass_caps_init (bpctl_dev_t *pbpctl_dev){
         if (TPL_IF_SERIES(pbpctl_dev->subdevice)) {
             pbpctl_dev->bp_caps|=TPL_CAP;
         }
+        if ((pbpctl_dev->subdevice&0xfe0)==0xb40)
+            pbpctl_dev->bp_caps&= ~TPL_CAP;
 
         if (INTEL_IF_SERIES(pbpctl_dev->subdevice)) {
             pbpctl_dev->bp_caps|=(BP_CAP | BP_STATUS_CAP | SW_CTL_CAP |  
@@ -3584,7 +3765,7 @@ void bypass_caps_init (bpctl_dev_t *pbpctl_dev){
                     pbpctl_dev->bp_caps_ex|=TPL2_CAP_EX;
                     pbpctl_dev->bp_caps|=TPL_CAP;
                     pbpctl_dev->bp_tpl_flag=tpl2_flag_status(pbpctl_dev);
-                }
+                } 
 
             }
 
@@ -3611,11 +3792,12 @@ void bypass_caps_init (bpctl_dev_t *pbpctl_dev){
                (BP10G9_IF_SERIES(pbpctl_dev->subdevice))) {
         pbpctl_dev->bp_caps|= (TX_CTL_CAP| TX_STATUS_CAP);
     }
-    if ((pbpctl_dev->subdevice&0xa00)==0xa00)
+    if ((pbpctl_dev->subdevice&0xfe0)==0xaa0)
         pbpctl_dev->bp_caps|= (TX_CTL_CAP| TX_STATUS_CAP);
     if (PEG5_IF_SERIES(pbpctl_dev->subdevice))
         pbpctl_dev->bp_caps|= (TX_CTL_CAP| TX_STATUS_CAP);
-
+    if (pbpctl_dev->bp_fiber5)
+        pbpctl_dev->bp_caps|= (TX_CTL_CAP| TX_STATUS_CAP);
 
     if (BP10GB_IF_SERIES  (pbpctl_dev->subdevice)) {
         pbpctl_dev->bp_caps&= ~(TX_CTL_CAP| TX_STATUS_CAP);
@@ -4730,9 +4912,10 @@ static void if_scan_init(void){
         char cbuf[32];
         char *buf=NULL;
         char res[10];
-        int i=0;
+        int i=0, j=0;
         int  bus=0,slot=0,func=0;
         ifindex=dev->ifindex;
+
 
 
         memset(res,0,10);
@@ -4745,8 +4928,7 @@ static void if_scan_init(void){
             continue;
         if (!drvinfo.bus_info)
             continue;
-        if (!strcmp(drvinfo.bus_info,"N/A"))
-            continue;
+
         memcpy(&cbuf,drvinfo.bus_info,32);
         buf=  &cbuf[0];
 
@@ -4757,26 +4939,44 @@ static void if_scan_init(void){
             break;
         } */
         //}
-        while (*buf++!=':');
-        for (i=0;i<10;i++,buf++) {
-            if (*buf==':')
+
+
+        for (j=0;j<32;j++)
+            if (buf[j]==':')
                 break;
-            res[i]=*buf; 
+        if (++j>=32) {
+            continue;
+        }
+        for (i=0;i<10;i++,j++) {
+            if (j>=32)
+                break;
+            if (buf[j]==':')
+                break;
+            res[i]=buf[j]; 
 
         }
-        buf++;
+        if (++j>=32) {
+            continue;
+        }
+
         bus= str_to_hex(res);
         memset(res,0,10);
 
-        for (i=0;i<10;i++,buf++) {
-            if (*buf=='.')
+        for (i=0;i<10;i++,j++) {
+            if (j>=32)
                 break;
-            res[i]=*buf; 
+
+            if (buf[j]=='.')
+                break;
+            res[i]=buf[j]; 
 
         }
-        buf++;
+        if (++j>=32) {
+            continue;
+        }
+
         slot= str_to_hex(res);
-        func=  str_to_hex(buf);
+        func=  str_to_hex(&buf[j]);
         idx_dev=get_dev_idx_bsf(bus, slot, func) ;
 
 
@@ -5278,6 +5478,7 @@ typedef enum {
     PEG4BPFI6,
     PEG4BPFI6LX,
     PEG4BPFI6ZX,
+    PEG4BPFI6CS,
     PEG2BPI6,
     PEG2BPFI6,
     PEG2BPFI6LX,
@@ -5312,7 +5513,6 @@ typedef enum {
     M1E10G2BPI9CX4, 
     M1E10G2BPI9SR, 
     M1E10G2BPI9LR, 
-    M1E10G2BPI9T,
     PE210G2BPI9CX4,
     PE210G2BPI9SR,
     PE210G2BPI9LR,
@@ -5337,11 +5537,12 @@ typedef enum {
     M6E2G8BPi80A,
 
     PE2G2BPi35,
+    PAC1200BPi35,
     PE2G2BPFi35,
     PE2G2BPFi35LX,
     PE2G2BPFi35ZX,
     PE2G4BPi35,
-PE2G4BPi35L,
+    PE2G4BPi35L,
     PE2G4BPFi35,
     PE2G4BPFi35LX,
     PE2G4BPFi35ZX,
@@ -5368,6 +5569,24 @@ PE2G4BPi35L,
     PE310G4BPi9T,
     PE310G4BPi9SR,
     PE310G4BPi9LR,
+    PE210G2BPi40,
+    M1E210G2BPI40T,
+    M6E310G4BPi9SR,
+    M6E310G4BPi9LR,
+    PE2G6BPI6CS,
+    PE2G6BPI6,
+
+    M1E2G4BPi35,
+    M1E2G4BPFi35,
+    M1E2G4BPFi35LX,
+    M1E2G4BPFi35ZX,
+
+    M1E2G4BPi35JP,
+    M1E2G4BPi35JP1,
+
+    PE310G4DBi9T,
+
+
 } board_t;
 
 typedef struct _bpmod_info_t {
@@ -5453,6 +5672,7 @@ dev_desc_t dev_desc[]={
     {"Silicom Bypass PEG4BPFI6 series adapter"},
     {"Silicom Bypass PEG4BPFI6LX series adapter"},
     {"Silicom Bypass PEG4BPFI6ZX series adapter"},
+    {"Silicom Bypass PEG4BPFI6CS series adapter"},
     {"Silicom Bypass PEG2BPI6 series adapter"},
     {"Silicom Bypass PEG2BPFI6 series adapter"},
     {"Silicom Bypass PEG2BPFI6LX series adapter"},
@@ -5527,6 +5747,7 @@ dev_desc_t dev_desc[]={
 
 
     {"Silicom Bypass PE2G2BPi35 series adapter"},
+    {"Silicom Bypass PAC1200BPi35 series adapter"},
     {"Silicom Bypass PE2G2BPFi35 series adapter"},
     {"Silicom Bypass PE2G2BPFi35LX series adapter"},
     {"Silicom Bypass PE2G2BPFi35ZX series adapter"},
@@ -5534,7 +5755,7 @@ dev_desc_t dev_desc[]={
 
 
     {"Silicom Bypass PE2G4BPi35 series adapter"},
-{"Silicom Bypass PE2G4BPi35L series adapter"},
+    {"Silicom Bypass PE2G4BPi35L series adapter"},
     {"Silicom Bypass PE2G4BPFi35 series adapter"},
     {"Silicom Bypass PE2G4BPFi35LX series adapter"},
     {"Silicom Bypass PE2G4BPFi35ZX series adapter"},
@@ -5562,6 +5783,22 @@ dev_desc_t dev_desc[]={
     {"Silicom Bypass PE310G4BPi9T series adapter"},
     {"Silicom Bypass PE310G4BPi9SR series adapter"},
     {"Silicom Bypass PE310G4BPi9LR series adapter"},
+    {"Silicom Bypass PE210G2BPi40T series adapter"},
+    {"Silicom Bypass M1E210G2BPI40T series adapter"},
+    {"Silicom Bypass M6E310G4BPi9SR series adapter"},
+    {"Silicom Bypass M6E310G4BPi9LR series adapter"},
+    {"Silicom Bypass PE2G6BPI6CS series adapter"},
+    {"Silicom Bypass PE2G6BPI6 series adapter"},
+
+    {"Silicom Bypass M1E2G4BPi35 series adapter"},
+    {"Silicom Bypass M1E2G4BPFi35 series adapter"},
+    {"Silicom Bypass M1E2G4BPFi35LX series adapter"},
+    {"Silicom Bypass M1E2G4BPFi35ZX series adapter"},
+    {"Silicom Bypass M1E2G4BPi35JP series adapter"},
+    {"Silicom Bypass M1E2G4BPi35JP1 series adapter"},
+
+    {"Silicom Bypass PE310G4DBi9T series adapter"},
+
     {0},
 };
 
@@ -5605,10 +5842,10 @@ static bpmod_info_t tx_ctl_pci_tbl[] = {
     {0x8086, 0x105f, SILICOM_SVID, SILICOM_MEG2BPFILN_SSID, MEG2BPFILN, "MEG2BPFILN-SD"},
     {0x8086, 0x105f, SILICOM_SVID, SILICOM_MEG2BPFINX_SSID, MEG2BPFINX, "MEG2BPFINX-SD"},
     {0x8086, 0x105f, SILICOM_SVID, SILICOM_PEG4BPFILX_SSID, PEG4BPFILX, "PEG4BPFILX-SD"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID, SILICOM_PE10G2BPISR_SSID, PE10G2BPISR, "PE10G2BPISR"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID, SILICOM_PE10G2BPILR_SSID, PE10G2BPILR, "PE10G2BPILR"},
+    {0x8086, 0x10C6, SILICOM_SVID, SILICOM_PE10G2BPISR_SSID, PE10G2BPISR, "PE10G2BPISR"},
+    {0x8086, 0x10C6, SILICOM_SVID, SILICOM_PE10G2BPILR_SSID, PE10G2BPILR, "PE10G2BPILR"},
     {0x8086, 0x10a9, SILICOM_SVID , SILICOM_MHIO8AD_SSID , MHIO8AD, "MHIO8AD-SD"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID, SILICOM_PE10G2BPICX4_SSID, PE10G2BPISR, "PE10G2BPICX4"},
+    {0x8086, 0x10DD, SILICOM_SVID, SILICOM_PE10G2BPICX4_SSID, PE10G2BPISR, "PE10G2BPICX4"},
     {0x8086, 0x10a7, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PEG2BPI5_SSID /*PCI_ANY_ID*/, PEG2BPI5, "PEG2BPI5-SD"},
     {0x8086, 0x10a7, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PEG6BPI_SSID /*PCI_ANY_ID*/, PEG6BPI, "PEG6BPI5"},
     {0x8086, 0x10a9, SILICOM_SVID /*PCI_ANY_ID*/,SILICOM_PEG4BPFI5_SSID, PEG4BPFI5, "PEG4BPFI5"},
@@ -5616,8 +5853,8 @@ static bpmod_info_t tx_ctl_pci_tbl[] = {
     {0x8086, 0x105f, SILICOM_SVID, SILICOM_MEG2BPFILXLN_SSID, MEG2BPFILXLN, "MEG2BPFILXLN"},
     {0x8086, 0x105e, SILICOM_SVID, SILICOM_PEG2BPIX1_SSID, PEG2BPIX1, "PEG2BPIX1-SD"},
     {0x8086, 0x105f, SILICOM_SVID, SILICOM_MEG2BPFILXNX_SSID, MEG2BPFILXNX, "MEG2BPFILXNX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID, SILICOM_XE10G2BPIT_SSID, XE10G2BPIT, "XE10G2BPIT"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID, SILICOM_XE10G2BPICX4_SSID, XE10G2BPICX4, "XE10G2BPICX4"},
+    {0x8086, 0x10C8, SILICOM_SVID, SILICOM_XE10G2BPIT_SSID, XE10G2BPIT, "XE10G2BPIT"},
+    {0x8086, 0x10DD, SILICOM_SVID, SILICOM_XE10G2BPICX4_SSID, XE10G2BPICX4, "XE10G2BPICX4"},
     {0x8086, 0x10C6, SILICOM_SVID, SILICOM_XE10G2BPISR_SSID, XE10G2BPISR, "XE10G2BPISR"},
     {0x8086, 0x10C6, SILICOM_SVID, SILICOM_XE10G2BPILR_SSID, XE10G2BPILR, "XE10G2BPILR"},
     {0x8086, 0x10C6, NOKIA_XE10G2BPIXR_SVID, NOKIA_XE10G2BPIXR_SSID, XE10G2BPIXR, "XE10G2BPIXR"},
@@ -5657,42 +5894,42 @@ static bpmod_info_t tx_ctl_pci_tbl[] = {
 
     {0x8086, 0x105f, SILICOM_SVID, SILICOM_PXEG4BPFI_SSID, PXEG4BPFI, "PXEG4BPFI-SD"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPI6_SSID /*PCI_ANY_ID*/, M1EG2BPI6, "MxEG2BPI6"},
+    {0x8086, 0x10c9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPI6_SSID /*PCI_ANY_ID*/, M1EG2BPI6, "MxEG2BPI6"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPFI6_SSID /*PCI_ANY_ID*/, M1EG2BPFI6, "MxEG2BPFI6"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPFI6LX_SSID /*PCI_ANY_ID*/, M1EG2BPFI6LX, "MxEG2BPFI6LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPFI6ZX_SSID /*PCI_ANY_ID*/, M1EG2BPFI6ZX, "MxEG2BPFI6ZX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPFI6_SSID /*PCI_ANY_ID*/, M1EG2BPFI6, "MxEG2BPFI6"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPFI6LX_SSID /*PCI_ANY_ID*/, M1EG2BPFI6LX, "MxEG2BPFI6LX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG2BPFI6ZX_SSID /*PCI_ANY_ID*/, M1EG2BPFI6ZX, "MxEG2BPFI6ZX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPI6_SSID /*PCI_ANY_ID*/, M1EG4BPI6, "MxEG4BPI6"},
+    {0x8086, 0x10c9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPI6_SSID /*PCI_ANY_ID*/, M1EG4BPI6, "MxEG4BPI6"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPFI6_SSID /*PCI_ANY_ID*/, M1EG4BPFI6, "MxEG4BPFI6"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPFI6LX_SSID /*PCI_ANY_ID*/, M1EG4BPFI6LX, "MxEG4BPFI6LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPFI6ZX_SSID /*PCI_ANY_ID*/, M1EG4BPFI6ZX, "MxEG4BPFI6ZX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPFI6_SSID /*PCI_ANY_ID*/, M1EG4BPFI6, "MxEG4BPFI6"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPFI6LX_SSID /*PCI_ANY_ID*/, M1EG4BPFI6LX, "MxEG4BPFI6LX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG4BPFI6ZX_SSID /*PCI_ANY_ID*/, M1EG4BPFI6ZX, "MxEG4BPFI6ZX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG6BPI6_SSID /*PCI_ANY_ID*/, M1EG6BPI6, "MxEG6BPI6"},
-
-
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPi80_SSID /*PCI_ANY_ID*/, M1E2G4BPi80, "MxE2G4BPi80"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi80_SSID /*PCI_ANY_ID*/, M1E2G4BPFi80, "MxE2G4BPFi80"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi80LX_SSID /*PCI_ANY_ID*/, M1E2G4BPFi80LX, "MxE2G4BPFi80LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi80ZX_SSID /*PCI_ANY_ID*/, M1E2G4BPFi80ZX, "MxE2G4BPFi80ZX"},
+    {0x8086, 0x10c9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1EG6BPI6_SSID /*PCI_ANY_ID*/, M1EG6BPI6, "MxEG6BPI6"},
 
 
+    {0x8086, 0x150e, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPi80_SSID /*PCI_ANY_ID*/, M1E2G4BPi80, "MxE2G4BPi80"},
+    {0x8086, 0x150f, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi80_SSID /*PCI_ANY_ID*/, M1E2G4BPFi80, "MxE2G4BPFi80"},
+    {0x8086, 0x150f, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi80LX_SSID /*PCI_ANY_ID*/, M1E2G4BPFi80LX, "MxE2G4BPFi80LX"},
+    {0x8086, 0x150f, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi80ZX_SSID /*PCI_ANY_ID*/, M1E2G4BPFi80ZX, "MxE2G4BPFi80ZX"},
 
 
 
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG2BPFI6_SSID /*PCI_ANY_ID*/, M2EG2BPFI6, "M2EG2BPFI6"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG2BPFI6LX_SSID /*PCI_ANY_ID*/, M2EG2BPFI6LX, "M2EG2BPFI6LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG2BPFI6ZX_SSID /*PCI_ANY_ID*/, M2EG2BPFI6ZX, "M2EG2BPFI6ZX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPI6_SSID /*PCI_ANY_ID*/, M2EG4BPI6, "M2EG4BPI6"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPFI6_SSID /*PCI_ANY_ID*/, M2EG4BPFI6, "M2EG4BPFI6"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPFI6LX_SSID /*PCI_ANY_ID*/, M2EG4BPFI6LX, "M2EG4BPFI6LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPFI6ZX_SSID /*PCI_ANY_ID*/, M2EG4BPFI6ZX, "M2EG4BPFI6ZX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG2BPFI6_SSID /*PCI_ANY_ID*/, M2EG2BPFI6, "M2EG2BPFI6"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG2BPFI6LX_SSID /*PCI_ANY_ID*/, M2EG2BPFI6LX, "M2EG2BPFI6LX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG2BPFI6ZX_SSID /*PCI_ANY_ID*/, M2EG2BPFI6ZX, "M2EG2BPFI6ZX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG6BPI6_SSID /*PCI_ANY_ID*/, M2EG6BPI6, "M2EG6BPI6"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPI6_SSID /*PCI_ANY_ID*/, M2EG4BPI6, "M2EG4BPI6"},
+
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPFI6_SSID /*PCI_ANY_ID*/, M2EG4BPFI6, "M2EG4BPFI6"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPFI6LX_SSID /*PCI_ANY_ID*/, M2EG4BPFI6LX, "M2EG4BPFI6LX"},
+    {0x8086, 0x10e6, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG4BPFI6ZX_SSID /*PCI_ANY_ID*/, M2EG4BPFI6ZX, "M2EG4BPFI6ZX"},
+
+    {0x8086, 0x10c9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2EG6BPI6_SSID /*PCI_ANY_ID*/, M2EG6BPI6, "M2EG6BPI6"},
 
 
     {0x8086, 0x10c9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PEG2DBI6_SSID /*PCI_ANY_ID*/, PEG2DBI6, "PEG2DBI6"},
@@ -5704,81 +5941,168 @@ static bpmod_info_t tx_ctl_pci_tbl[] = {
     //{0x8086, 0x10F9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE210G2DBi9SRRB_SSID , PE210G2DBi9SRRB, "PE210G2DBi9SRRB"}, 
     {0x8086, 0x10F9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE210G2DBi9LR_SSID  ,  PE210G2DBi9LR,   "PE210G2DBi9LR"},  
     //  {0x8086, 0x10F9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE210G2DBi9LRRB_SSID , PE210G2DBi9LRRB, "PE210G2DBi9LRRB"}, 
-    {0x8086, 0x10F9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE310G4DBi940SR_SSID , PE310G4DBi940SR, "PE310G4DBi9SR"}, 
+    {0x8086, 0x10F9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE310G4DBi940SR_SSID , PE310G4DBi940SR, "PE310G4DBi9SR"},
+
+    {0x8086, 0x10F9, SILICOM_SVID /*PCI_ANY_ID*/,SILICOM_PE310G4DBi9T_SSID , PE310G4DBi9T, "PE310G4DBi9T"},
+
 
 
     {0x8086, 0x10Fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE310G4BPi9T_SSID,  PE310G4BPi9T, "PE310G4BPi9T"},
     {0x8086, 0x10Fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE310G4BPi9SR_SSID, PE310G4BPi9SR, "PE310G4BPi9SR"},
     {0x8086, 0x10Fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE310G4BPi9LR_SSID, PE310G4BPi9LR, "PE310G4BPi9LR"},
+    {0x8086, 0x10Fb, SILICOM_SVID,  SILICOM_M6E310G4BPi9LR_SSID, M6E310G4BPi9LR, "M6E310G4BPi9LR"},
+    {0x8086, 0x10Fb, SILICOM_SVID,  SILICOM_M6E310G4BPi9SR_SSID, M6E310G4BPi9SR, "M6E310G4BPi9SR"},
 
 
 
 
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi80_SSID /*PCI_ANY_ID*/,    PE2G4BPi80, "PE2G4BPi80"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi80_SSID /*PCI_ANY_ID*/,   PE2G4BPFi80, "PE2G4BPFi80"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi80LX_SSID /*PCI_ANY_ID*/, PE2G4BPFi80LX, "PE2G4BPFi80LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi80ZX_SSID /*PCI_ANY_ID*/, PE2G4BPFi80ZX, "PE2G4BPFi80ZX"},
+    {0x8086, 0x150e, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi80_SSID /*PCI_ANY_ID*/,    PE2G4BPi80, "PE2G4BPi80"},
+    {0x8086, 0x150f, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi80_SSID /*PCI_ANY_ID*/,   PE2G4BPFi80, "PE2G4BPFi80"},
+    {0x8086, 0x150f, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi80LX_SSID /*PCI_ANY_ID*/, PE2G4BPFi80LX, "PE2G4BPFi80LX"},
+    {0x8086, 0x150f, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi80ZX_SSID /*PCI_ANY_ID*/, PE2G4BPFi80ZX, "PE2G4BPFi80ZX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi80L_SSID /*PCI_ANY_ID*/,    PE2G4BPi80L, "PE2G4BPi80L"},
+    {0x8086, 0x150e, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi80L_SSID /*PCI_ANY_ID*/,    PE2G4BPi80L, "PE2G4BPi80L"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M6E2G8BPi80A_SSID /*PCI_ANY_ID*/,    M6E2G8BPi80A, "MxE2G8BPi80A"},
-
-
-
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPi35_SSID /*PCI_ANY_ID*/,    PE2G2BPi35, "PE2G2BPi35"},
-
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi35_SSID /*PCI_ANY_ID*/,    PE2G2BPFi35, "PE2G2BPFi35"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi35LX_SSID /*PCI_ANY_ID*/,    PE2G2BPFi35LX, "PE2G2BPFi35LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi35ZX_SSID /*PCI_ANY_ID*/,    PE2G2BPFi35ZX, "PE2G2BPFi35ZX"},
-
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi35_SSID /*PCI_ANY_ID*/,    PE2G4BPi35, "PE2G4BPi35"},
-
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi35L_SSID /*PCI_ANY_ID*/,    PE2G4BPi35L, "PE2G4BPi35L"},
+    {0x8086, 0x150e, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M6E2G8BPi80A_SSID /*PCI_ANY_ID*/,    M6E2G8BPi80A, "MxE2G8BPi80A"},
 
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi35_SSID /*PCI_ANY_ID*/,    PE2G4BPFi35, "PE2G4BPFi35"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi35LX_SSID /*PCI_ANY_ID*/,    PE2G4BPFi35LX, "PE2G4BPFi35LX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi35ZX_SSID /*PCI_ANY_ID*/,    PE2G4BPFi35ZX, "PE2G4BPFi35ZX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G6BPi35_SSID /*PCI_ANY_ID*/,    PE2G6BPi35, "PE2G6BPi35"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPi35_SSID /*PCI_ANY_ID*/,    PE2G2BPi35, "PE2G2BPi35"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PAC1200BPi35_SSID /*PCI_ANY_ID*/,    PAC1200BPi35, "PAC1200BPi35"},
+
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi35_SSID /*PCI_ANY_ID*/,    PE2G2BPFi35, "PE2G2BPFi35"},
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi35LX_SSID /*PCI_ANY_ID*/,    PE2G2BPFi35LX, "PE2G2BPFi35LX"},
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi35ZX_SSID /*PCI_ANY_ID*/,    PE2G2BPFi35ZX, "PE2G2BPFi35ZX"},
+
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi35_SSID /*PCI_ANY_ID*/,    PE2G4BPi35, "PE2G4BPi35"},
+
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPi35L_SSID /*PCI_ANY_ID*/,    PE2G4BPi35L, "PE2G4BPi35L"},
+
+
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi35_SSID /*PCI_ANY_ID*/,    PE2G4BPFi35, "PE2G4BPFi35"},
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi35LX_SSID /*PCI_ANY_ID*/,    PE2G4BPFi35LX, "PE2G4BPFi35LX"},
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G4BPFi35ZX_SSID /*PCI_ANY_ID*/,    PE2G4BPFi35ZX, "PE2G4BPFi35ZX"},
+
+
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPi35_SSID /*PCI_ANY_ID*/,    M1E2G4BPi35, "M1E2G4BPi35"},
+    {0x8086, 0x1521, 0x1304 /*PCI_ANY_ID*/, SILICOM_M1E2G4BPi35JP_SSID /*PCI_ANY_ID*/,    M1E2G4BPi35JP, "M1E2G4BPi35JP"},
+    {0x8086, 0x1521, 0x1304 /*PCI_ANY_ID*/, SILICOM_M1E2G4BPi35JP1_SSID /*PCI_ANY_ID*/,    M1E2G4BPi35JP1, "M1E2G4BPi35JP1"},
+
+
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi35_SSID /*PCI_ANY_ID*/,    M1E2G4BPFi35, "M1E2G4BPFi35"},
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi35LX_SSID /*PCI_ANY_ID*/,    M1E2G4BPFi35LX, "M1E2G4BPFi35LX"},
+    {0x8086, 0x1522, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E2G4BPFi35ZX_SSID /*PCI_ANY_ID*/,    M1E2G4BPFi35ZX, "M1E2G4BPFi35ZX"},
+
+
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G6BPi35_SSID /*PCI_ANY_ID*/,    PE2G6BPi35, "PE2G6BPi35"},
 
     // {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa0,PE2G6BPi35CX,"PE2G6BPi35CX"},
     // {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa1,PE2G6BPi35CX,"PE2G6BPi35CX"},
     // {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa2,PE2G6BPi35CX,"PE2G6BPi35CX"},
 
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa0,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa1,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa2,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa3,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa4,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa5,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa6,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa7,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa8,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaa9,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaaa,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaab,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaac,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaad,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaae,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaaf,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab0,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab1,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab2,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab3,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab4,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab5,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab6,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab7,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab8,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xab9,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xaba,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xabb,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xabc,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xabd,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xabe,PE2G6BPi35CX,"PE2G6BPi35CX"},
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/,0xabf,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B40,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B41,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B42,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B43,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B44,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B45,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B46,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B47,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B48,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B49,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B4a,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B4b,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B4c,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B4d,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B4e,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B4F,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B50,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B51,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B52,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B53,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B54,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B55,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B56,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B57,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B58,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B59,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B5A,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B5B,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B5C,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B5D,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B5E,PE2G6BPI6CS,"PE2G6BPI6CS"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,0x0B5F,PE2G6BPI6CS,"PE2G6BPI6CS"},
+
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B60,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B61,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B62,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B63,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B64,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B65,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B66,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B67,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B68,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B69,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B6a,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B6b,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B6c,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B6d,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B6e,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B6f,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B71,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B72,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B73,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B74,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B75,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B76,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B77,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B78,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B79,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B7a,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B7b,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B7c,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B7d,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B7e,PEG4BPFI6CS,"PEG4BPFI6CS"},
+    {0x8086, 0x10E6, SILICOM_SVID /*PCI_ANY_ID*/,0x0B7f,PEG4BPFI6CS,"PEG4BPFI6CS"},
+
+
+
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/,SILICOM_PE2G6BPI6_SSID,PE2G6BPI6,"PE2G6BPI6"},
+
+
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa0,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa1,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa2,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa3,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa4,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa5,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa6,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa7,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa8,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaa9,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaaa,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaab,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaac,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaad,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaae,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaaf,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab0,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab1,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab2,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab3,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab4,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab5,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab6,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab7,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab8,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xab9,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xaba,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xabb,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xabc,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xabd,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xabe,PE2G6BPi35CX,"PE2G6BPi35CX"},
+    {0x8086, 0x1521, SILICOM_SVID /*PCI_ANY_ID*/,0xabf,PE2G6BPi35CX,"PE2G6BPi35CX"},
 
     {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPi80_SSID /*PCI_ANY_ID*/,    PE2G2BPi80, "PE2G2BPi80"},
     {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE2G2BPFi80_SSID /*PCI_ANY_ID*/,   PE2G2BPFi80, "PE2G2BPFi80"},
@@ -5796,7 +6120,6 @@ static bpmod_info_t tx_ctl_pci_tbl[] = {
     {0x8086, 0x10fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E10G2BPI9CX4_SSID /*PCI_ANY_ID*/, M1E10G2BPI9CX4, "MxE210G2BPI9CX4"},
     {0x8086, 0x10fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E10G2BPI9SR_SSID /*PCI_ANY_ID*/, M1E10G2BPI9SR, "MxE210G2BPI9SR"},
     {0x8086, 0x10fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E10G2BPI9LR_SSID /*PCI_ANY_ID*/, M1E10G2BPI9LR, "MxE210G2BPI9LR"},
-    {0x8086, 0x10fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E10G2BPI9T_SSID /*PCI_ANY_ID*/, M1E10G2BPI9T, "MxE210G2BPI9T"},
 
     {0x8086, 0x10fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2E10G2BPI9CX4_SSID /*PCI_ANY_ID*/, M2E10G2BPI9CX4, "M2E10G2BPI9CX4"},
     {0x8086, 0x10fb, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M2E10G2BPI9SR_SSID /*PCI_ANY_ID*/, M2E10G2BPI9SR, "M2E10G2BPI9SR"},
@@ -5832,7 +6155,10 @@ static bpmod_info_t tx_ctl_pci_tbl[] = {
     {0x1374, 0x28, SILICOM_SVID,0x28,  PXGBPI, "PXG2BPI-SD"},
 #endif
 #endif
-    {0x8086, PCI_ANY_ID, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M6E2G8BPi80_SSID /*PCI_ANY_ID*/,    M6E2G8BPi80, "MxE2G8BPi80"},
+    {0x8086, 0x10C9, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M6E2G8BPi80_SSID /*PCI_ANY_ID*/,    M6E2G8BPi80, "MxE2G8BPi80"},
+    {0x8086, 0x1528, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_PE210G2BPi40_SSID /*PCI_ANY_ID*/,    PE210G2BPi40, "PE210G2BPi40T"},
+    {0x8086, 0x1528, SILICOM_SVID /*PCI_ANY_ID*/, SILICOM_M1E210G2BPI40T_SSID /*PCI_ANY_ID*/,    M1E210G2BPI40T, "M1E210G2BPi40T"},
+
 
     /* required last entry */
     {0,}
@@ -5913,14 +6239,23 @@ static int __init bypass_init_module(void)
                 bpctl_dev_arr[idx_dev].bp_10g9=1;
             if (BP10G_IF_SERIES(bpctl_dev_arr[idx_dev].subdevice))
                 bpctl_dev_arr[idx_dev].bp_10g=1;
+            if (PEG540_IF_SERIES(bpctl_dev_arr[idx_dev].subdevice)) {
+
+                bpctl_dev_arr[idx_dev].bp_540=1;
+            }
             if (PEGF5_IF_SERIES(bpctl_dev_arr[idx_dev].subdevice))
                 bpctl_dev_arr[idx_dev].bp_fiber5=1;
             if (PEG80_IF_SERIES(bpctl_dev_arr[idx_dev].subdevice))
                 bpctl_dev_arr[idx_dev].bp_i80=1;
             if (PEGF80_IF_SERIES(bpctl_dev_arr[idx_dev].subdevice))
                 bpctl_dev_arr[idx_dev].bp_i80=1;
-            if ((bpctl_dev_arr[idx_dev].subdevice&0xa00)==0xa00)
+            if ((bpctl_dev_arr[idx_dev].subdevice&0xfe0)==0xb60)
+                bpctl_dev_arr[idx_dev].bp_fiber5=1;
+            if ((bpctl_dev_arr[idx_dev].subdevice&0xfc0)==0xb40)
+                bpctl_dev_arr[idx_dev].bp_fiber5=1;
+            if ((bpctl_dev_arr[idx_dev].subdevice&0xfe0)==0xaa0)
                 bpctl_dev_arr[idx_dev].bp_i80=1;
+
             if (BP10GB_IF_SERIES(bpctl_dev_arr[idx_dev].subdevice)) {
                 if (bpctl_dev_arr[idx_dev].ifindex==0) {
                     unregister_chrdev(major_num, DEVICE_NAME);

@@ -1,7 +1,73 @@
                  Release Notes
        Silicom Linux Bypass-SD Control Utility
-		Version 5.0.40.29
-		   05/04/2012
+		Version 5.0.49
+		   17/03/2013
+v5.0.50
+- Fixed bypass_caps for sc fiber group.
+
+v5.0.49
+- Added
+M1E2G4BPi35JP,
+M1E2G4BPi35JP1,
+PE310G4DBi9T
+- Changed to BSD license
+
+v5.0.48
+- Added
+M1E2G4BPi35,
+M1E2G4BPFi35,
+M1E2G4BPFi35LX,
+M1E2G4BPFi35ZX,
+
+v5.0.47                   
+- Fixed PEG2BI5SC6 support.
+
+
+v5.0.46                   
+- Fixed bypass_caps for fiber5 group.
+
+
+v5.0.44                   
+- Fixed event notifier.
+
+v5.0.43                   
+- Removed support for M1E10G2BPI9T
+
+v5.0.42                   
+- Added support for M1E210G2BPi40-T
+                   
+v5.0.41
+- Added support for PEG4BPFI6CS.
+
+v5.0.40.39.1
+- Some changes for PE2G6BPI6CS & PE2G6BPi35CX.
+
+v5.0.40.39
+- Added support for PE2G6BPI6-SD. 
+- Fixed compilation warnings.
+- Fixed version printout.                  
+
+v5.0.40.38
+- Added support for PE2G6BPI6CS-SD.
+
+v5.0.40.36
+- if_scan_init changes.
+
+v5.0.40.35
+- Added missed device id for i80, i35, 98, 99 series.
+
+
+v5.0.40.34
+- Added support for M6E310G4BPi9SR, M6E310G4BPi9LR.
+
+v5.0.40.33
+- Set_tx fixes.
+
+v5.0.40.32
+- Added PAC1200BPi35,  PE210G2BPI40.
+- Fixed set_tx for DBI6.
+
+
 v5.0.40.29
 - Added device ID for some 99..
 
@@ -218,7 +284,7 @@ v5.0.27
 - Added support for PEG4BPFI6, PEG4BPFI6LX,  
 PEG4BPFI6ZX, PEG2BPI6, PEG2BPFI6, PEG2BPFI6LX, PEG2BPFI6ZX, 
 PEG4BPI6FC, PEG4BPFI6FC, PEG4BPFI6FCLX, PEG4BPFI6FCZX,
-PEG6BPI6, PEG2BPI6SC6, MEG2BPI6, XEG2BPI6, MEG4BPI6.
+PEG6BPI6,  MEG2BPI6, XEG2BPI6, MEG4BPI6.
  
 v5.0.26.1 
 - Added support for PEG4BPI6.

@@ -1,35 +1,6 @@
-###############################################################################
-#
-# Intel 10 Gigabit PCI Express Linux driver
-# Copyright(c) 1999 - 2011 Intel Corporation.
-#
-# This program is free software; you can redistribute it and/or modify it
-# under the terms and conditions of the GNU General Public License,
-# version 2, as published by the Free Software Foundation.
-#
-# This program is distributed in the hope it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-# more details.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
-#
-# The full GNU General Public License is included in this distribution in
-# the file called "COPYING".
-#
-# Contact Information:
-# e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
-# Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
-#
-################################################################################
 
-###########################################################################
-# Driver files
+MOD_VER=5.0.50
 
-MOD_VER=5.0.40.29
-INSTALL_MOD_PATH=/opt/rb
 
 # core driver files
 CFILES = bp_mod.c
@@ -145,12 +116,12 @@ endif
 EXTRA_CFLAGS += -DVER_STR_SET="\"$(MOD_VER)\""
 EXTRA_CFLAGS += -DBP_READ_REG
 EXTRA_CFLAGS += -DPMC_FIX_FLAG
-#EXTRA_CFLAGS += -DBP_SYNC_FLAG
+EXTRA_CFLAGS += -DBP_SYNC_FLAG
 EXTRA_CFLAGS += -DBP_10G
 
 
-EXTRA_CFLAGS += -DBP_SELF_TEST
-EXTRA_CFLAGS += -DBP_LINK_FAIL_NOTIFIER
+#EXTRA_CFLAGS += -DBP_SELF_TEST
+#EXTRA_CFLAGS += -DBP_LINK_FAIL_NOTIFIER
 EXTRA_CFLAGS += -DBP_PROC_SUPPORT
 #EXTRA_CFLAGS += -DBP_DBI_FLAG	
 # extra flags for module builds
