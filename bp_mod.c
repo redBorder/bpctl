@@ -6244,7 +6244,7 @@ static int __init bypass_init_module(void)
     if (!device_num) {
         printk("No such device\n"); 
         unregister_chrdev(major_num, DEVICE_NAME);
-        return -1;
+        return +1;
     }
 
 
