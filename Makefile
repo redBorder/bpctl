@@ -1,6 +1,8 @@
 
 MOD_VER=5.0.50
 
+MOD_VER=5.0.40.29-rb
+INSTALL_MOD_PATH=/opt/rb
 
 # core driver files
 CFILES = bp_mod.c
